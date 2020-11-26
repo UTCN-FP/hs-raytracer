@@ -1,8 +1,12 @@
 module Vec3 where
 
+import Util
+
 import Bmp.Bmp
 
-data Vec3 = Vec3 {x:: Double, y:: Double, z:: Double}
+import Debug.Trace
+
+data Vec3 = Vec3 {x:: Double, y:: Double, z:: Double} deriving (Show)
 newtype Color = Color Vec3
 newtype Point = Point Vec3
 
@@ -35,12 +39,18 @@ cross v1 v2 = Vec3 vx vy vz where
 
 unit v1 = v1 `divideConst` (len v1)
 
-vecToColor v1 = Color $ Vec3 (255 * x v1) (255 * y v1) (255 * z v1)
+vecToColor :: Vec3 -> Int -> Color
+vecToColor v1 nrSamples = Color $ Vec3 vx vy vz where
+  sf = fromIntegral nrSamples
+  cl = clamp 0 0.999
+  vx = 255 * cl ((x v1) / sf)
+  vy = 255 * cl ((y v1) / sf)
+  vz = 255 * cl ((z v1) / sf)
 
 colorToPixel (Color c) = Pixel (round (x c)) (round (y c)) (round (z c))
 
 vec x y z = Vec3 x y z
-color r g b = vecToColor $ vec r g b
+color r g b nrSamples = vecToColor (vec r g b ) nrSamples
 point x y z = Point $ vec x y z
 
 pointToVec (Point p) = p

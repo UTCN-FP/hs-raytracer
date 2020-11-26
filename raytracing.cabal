@@ -54,7 +54,9 @@ library
                        Ray,
                        Sphere,
                        Hit.Hit, 
-                       Hit.HitRecord
+                       Hit.HitRecord,
+                       Random,
+                       Util
 
   -- Modules included in this library but not exported.
   -- other-modules:

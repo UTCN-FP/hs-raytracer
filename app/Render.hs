@@ -10,6 +10,12 @@ import Sphere
 
 import qualified Hit.Hit as H
 import Hit.HitRecord
+import Util
+import Random
+
+import Data.List
+
+import Debug.Trace
 
 degToRad :: Double -> Double
 degToRad d = d * pi / 180
@@ -17,7 +23,8 @@ degToRad d = d * pi / 180
 data Image = Image {
   imageAspectRatio :: Double,
   imageWidth :: Int,
-  imageHeight :: Int
+  imageHeight :: Int,
+  imageNrSamples :: Int
 }
 
 data Camera = Camera {
@@ -35,8 +42,6 @@ data Scene = Scene {
   sceneCamera :: Camera
 }
 
-inf = 1/0 :: Double
-
 cameraRay :: Camera -> Double -> Double -> Ray
 cameraRay camera  u v = 
   let Point o = cameraOrigin camera
@@ -45,16 +50,17 @@ cameraRay camera  u v =
       camV = cameraVertical camera
   in Ray (cameraOrigin camera) (llc `add` (camH `timesConst` u) `add` (camV `timesConst` v) `sub` o)
 
-rayColor :: Ray -> [H.Object] -> Color
+rayColor :: Ray -> [H.Object] -> Vec3
 rayColor r world =
   case H.hitList r world 0 inf of
     Just hitRec ->
       let n = hitNormal hitRec
-      in vecToColor ((vec (x n + 1) (y n + 1) (z n + 1)) `timesConst` 0.5)
+      in ((vec (x n + 1) (y n + 1) (z n + 1)) `timesConst` 0.5)
     Nothing ->
       let d = unit (rayDirection r)
           t = 0.5 * (y d + 1.0)
-       in vecToColor $ timesConst (vec 1 1 1) (1-t) `add` timesConst (vec 0.5 0.7 1.0) t
+          interP = timesConst (vec 1 1 1) (1-t) `add` timesConst (vec 0.5 0.7 1.0) t
+       in interP
        
 
 setupCamera :: Image -> Point -> Double -> Camera
@@ -74,30 +80,36 @@ setupCamera image (Point orig) vpHeight =
       cameraLowerLeftCorner = llc
     }
 
-setupImage :: Int -> Int -> Image
-setupImage w h =
+setupImage :: Int -> Int -> Int -> Image
+setupImage w h nrSamples =
   Image {
     imageAspectRatio = fromIntegral w / fromIntegral h,
     imageWidth = w,
-    imageHeight = h
+    imageHeight = h,
+    imageNrSamples = nrSamples
   }
 
-renderScene :: Int -> Int -> BmpImg
-renderScene w h = 
-  let image = setupImage w h
+renderScene :: Int -> Int -> Random -> Int -> BmpImg
+renderScene w h seed nrSamples = 
+  let image = setupImage w h nrSamples
       camera = setupCamera image (point 0 0 0) 2.0
       world = [H.sphere (point 0 0 (-1)) 0.5, H.sphere (point 0 (-100.5) (-1)) 100]
 
-      genPixel :: Int -> Int -> Pixel
-      genPixel x y = 
-        colorToPixel c where
+      genPixel :: Int -> Int -> Random -> Pixel
+      genPixel x y seed =         
+        colorToPixel . (`vecToColor` nrSamples) $ foldl add (vec 0 0 0) $ unfoldr fn (seed, nrSamples) where
           xf = fromIntegral x :: Double
           yf = fromIntegral y :: Double
-          u = xf / fromIntegral (imageWidth image - 1)
-          v = yf / fromIntegral (imageHeight image - 1)
-          r = cameraRay camera u v
-          c = rayColor r world
+          fn (_, 0) = Nothing
+          fn (rnd, smp) =
+            let (r1, rnd') = nextDouble rnd
+                (r2, rnd'') = nextDouble rnd'
+                u = (xf + r1) / fromIntegral (imageWidth image - 1)
+                v = (yf + r2) / fromIntegral (imageHeight image - 1)
+                r = cameraRay camera u v
+                c = rayColor r world
+            in Just (c, (rnd'', smp - 1))
       
       gen :: Int -> Int -> [[Pixel]]
-      gen w h = [[genPixel x y | x <- [0 .. w -1]]| y <- [0 .. h -1]] `using` (parList rdeepseq)
+      gen w h = [[genPixel x y seed | x <- [0 .. w -1]]| y <- [0 .. h -1]] `using` (parList rdeepseq)
   in BmpImg $ map ImgRow (gen w h)
