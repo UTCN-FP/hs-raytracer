@@ -52,7 +52,9 @@ library
   exposed-modules:     Bmp.Bmp,
                        Vec3,
                        Ray,
-                       Sphere
+                       Sphere,
+                       Hit.Hit, 
+                       Hit.HitRecord
 
   -- Modules included in this library but not exported.
   -- other-modules:
