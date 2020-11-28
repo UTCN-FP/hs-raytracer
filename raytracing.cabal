@@ -55,8 +55,9 @@ library
                        Sphere,
                        Hit.Hit, 
                        Hit.HitRecord,
-                       Random,
-                       Util
+                       Util.Random,
+                       Util.Util,
+                       Material
 
   -- Modules included in this library but not exported.
   -- other-modules:

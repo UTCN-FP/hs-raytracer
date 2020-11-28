@@ -1,10 +1,9 @@
 module Vec3 where
 
-import Util
+import Util.Util
 
 import Bmp.Bmp
 
-import Debug.Trace
 
 data Vec3 = Vec3 {x:: Double, y:: Double, z:: Double} deriving (Show)
 newtype Color = Color Vec3
@@ -37,15 +36,24 @@ cross v1 v2 = Vec3 vx vy vz where
   vy = z v1 * x v2 - x v1 * z v2
   vz = x v1 * y v2 - y v1 * x v2
 
+reflect v n = v `sub` (n `timesConst` (2 * dot v n))
+
 unit v1 = v1 `divideConst` (len v1)
+
+nearZero :: Vec3 -> Bool
+nearZero (Vec3 x y z) = (abs x < s) && (abs y < s) && (abs z < s) where s = 0.00000001
 
 vecToColor :: Vec3 -> Int -> Color
 vecToColor v1 nrSamples = Color $ Vec3 vx vy vz where
   sf = fromIntegral nrSamples
   cl = clamp 0 0.999
-  vx = 255 * cl ((x v1) / sf)
-  vy = 255 * cl ((y v1) / sf)
-  vz = 255 * cl ((z v1) / sf)
+  vx = 255 * cl (sqrt $ (x v1) / sf)
+  vy = 255 * cl (sqrt $ (y v1) / sf)
+  vz = 255 * cl (sqrt $ (z v1) / sf)
+
+colorToVec :: Color -> Vec3
+colorToVec (Color c) =
+  Vec3 (x c / 255) (y c / 255) (z c / 255)
 
 colorToPixel (Color c) = Pixel (round (x c)) (round (y c)) (round (z c))
 

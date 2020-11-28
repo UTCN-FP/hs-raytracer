@@ -4,7 +4,9 @@ import Hit.HitRecord
 import Ray
 import Vec3
 
-data Sphere = Sphere {sphereCenter :: Point, sphereRadius :: Double}
+import Material
+
+data Sphere = Sphere {sphereCenter :: Point, sphereRadius :: Double, sphereMaterial :: Material}
 
 hitSphere :: Ray -> Sphere -> Double -> Double -> Maybe HitRecord
 hitSphere ray sphere minT maxT =
@@ -24,7 +26,7 @@ hitSphere ray sphere minT maxT =
               root2 = (- halfB + sqrtd) / a
 
               mkRec root =
-                Just $ hitRecord root p ray outN
+                Just $ hitRecord root p ray outN (sphereMaterial sphere)
                 where
                   p = ray `at` root
                   outN = ((pointToVec p) `sub` (pointToVec $ sphereCenter sphere)) `divideConst` (sphereRadius sphere)

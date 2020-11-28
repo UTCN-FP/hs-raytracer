@@ -6,16 +6,13 @@ import Bmp.Bmp
 import Vec3
 import Ray
 
-import Sphere
-
-import qualified Hit.Hit as H
+import Hit.Hit
 import Hit.HitRecord
-import Util
-import Random
+import Util.Util
+import Util.Random
+import Material
 
 import Data.List
-
-import Debug.Trace
 
 degToRad :: Double -> Double
 degToRad d = d * pi / 180
@@ -24,7 +21,8 @@ data Image = Image {
   imageAspectRatio :: Double,
   imageWidth :: Int,
   imageHeight :: Int,
-  imageNrSamples :: Int
+  imageNrSamples :: Int,
+  imageMaxDepth :: Int
 }
 
 data Camera = Camera {
@@ -50,17 +48,21 @@ cameraRay camera  u v =
       camV = cameraVertical camera
   in Ray (cameraOrigin camera) (llc `add` (camH `timesConst` u) `add` (camV `timesConst` v) `sub` o)
 
-rayColor :: Ray -> [H.Object] -> Vec3
-rayColor r world =
-  case H.hitList r world 0 inf of
+rayColor :: Ray -> [Object] -> Int -> Random -> (Vec3, Random)
+rayColor _ _ 0 seed = (vec 0 0 0, seed)
+rayColor r world depth seed =
+  case hitList r world 0.001 inf of
     Just hitRec ->
-      let n = hitNormal hitRec
-      in ((vec (x n + 1) (y n + 1) (z n + 1)) `timesConst` 0.5)
+      let mat = hitMaterial hitRec
+      in case scatter mat r hitRec seed of 
+        Nothing -> (vec 0 0 0, seed)
+        Just (att, sc, seed') -> 
+          (colorToVec att `times` rc, seed'') where (rc, seed'') = rayColor sc world (depth - 1) seed'
     Nothing ->
       let d = unit (rayDirection r)
           t = 0.5 * (y d + 1.0)
           interP = timesConst (vec 1 1 1) (1-t) `add` timesConst (vec 0.5 0.7 1.0) t
-       in interP
+       in (interP, seed)
        
 
 setupCamera :: Image -> Point -> Double -> Camera
@@ -80,20 +82,25 @@ setupCamera image (Point orig) vpHeight =
       cameraLowerLeftCorner = llc
     }
 
-setupImage :: Int -> Int -> Int -> Image
-setupImage w h nrSamples =
+setupImage :: Int -> Int -> Int -> Int -> Image
+setupImage w h nrSamples maxDepth =
   Image {
     imageAspectRatio = fromIntegral w / fromIntegral h,
     imageWidth = w,
     imageHeight = h,
-    imageNrSamples = nrSamples
+    imageNrSamples = nrSamples,
+    imageMaxDepth = maxDepth
   }
 
 renderScene :: Int -> Int -> Random -> Int -> BmpImg
 renderScene w h seed nrSamples = 
-  let image = setupImage w h nrSamples
-      camera = setupCamera image (point 0 0 0) 2.0
-      world = [H.sphere (point 0 0 (-1)) 0.5, H.sphere (point 0 (-100.5) (-1)) 100]
+  let image = setupImage w h nrSamples 50
+      camera = setupCamera image (point 0 0 0.5) 2.0
+      world = [sphere (point 0 0 (-1)) 0.5 (diffuse $ color 1 0 0 nrSamples), 
+               sphere (point (-1.3) 0 (-1)) 0.5 (metal $ color 0 1 0 nrSamples),
+               sphere (point 1.3 0 (-1)) 0.5 (metal $ color 0 0 1 nrSamples),
+               sphere (point 0 (-100.5) (-1)) 100 (diffuse $ color 1 1 1 nrSamples)
+              ]
 
       genPixel :: Int -> Int -> Random -> Pixel
       genPixel x y seed =         
@@ -107,8 +114,8 @@ renderScene w h seed nrSamples =
                 u = (xf + r1) / fromIntegral (imageWidth image - 1)
                 v = (yf + r2) / fromIntegral (imageHeight image - 1)
                 r = cameraRay camera u v
-                c = rayColor r world
-            in Just (c, (rnd'', smp - 1))
+                (c, rnd''') = rayColor r world (imageMaxDepth image) rnd''
+            in Just (c, (rnd''', smp - 1))
       
       gen :: Int -> Int -> [[Pixel]]
       gen w h = [[genPixel x y seed | x <- [0 .. w -1]]| y <- [0 .. h -1]] `using` (parList rdeepseq)

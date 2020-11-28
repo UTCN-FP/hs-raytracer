@@ -1,4 +1,4 @@
-module Util where
+module Util.Util where
 
 clamp :: Double -> Double -> Double -> Double
 clamp lo hi n
