@@ -3,9 +3,47 @@ module Util.Random where
 import qualified Data.Word as W
 import Data.Bits
 
+import Control.Monad
+
 import Vec3
 
-newtype Random = Random W.Word64
+newtype Random = Random W.Word64 deriving Show
+
+newtype Rnd g a = Rnd (g -> (a, g))
+
+runRandom :: (RandomSeed s) => s -> Rnd s a -> a
+runRandom seed (Rnd f) = fst $ f seed
+
+evalRandom :: (RandomSeed s) => s -> Rnd s a -> s
+evalRandom seed (Rnd f) = snd $ f seed
+
+varyRandom :: Random -> Int -> Random
+varyRandom (Random r) v = Random $ (iterate nextXor r) !! v
+
+class RandomSeed a where
+  newSeed :: a
+
+instance RandomSeed Random where
+  newSeed = newRandom 0x248729837123
+
+instance Functor (Rnd g) where
+  fmap f (Rnd a) = Rnd $ \s -> 
+    let (v, seed) = a s
+    in (f v, seed)
+
+instance (RandomSeed g) => Applicative (Rnd g) where
+  pure a = Rnd $ \s -> (a, s)
+  (Rnd f) <*> (Rnd v) = Rnd $ \s ->
+    let (x, seed) = v s
+        (g, seed') = f seed
+    in (g x, seed')
+
+instance (RandomSeed g) => Monad (Rnd g) where
+  return a = Rnd $ \s -> (a, s)
+  (Rnd a) >>= f = Rnd $ \s ->
+    let (b, seed') = a s
+        Rnd g = f b
+    in g seed'
 
 nextXor :: W.Word64 -> W.Word64
 nextXor w =
@@ -17,38 +55,41 @@ nextXor w =
 newRandom :: W.Word64 -> Random
 newRandom seed = Random seed
 
-nextDouble :: Random -> (Double, Random)
-nextDouble (Random w) = (fromIntegral w / fromIntegral maxW, Random $ nextXor w) where maxW = maxBound :: W.Word64
+nextDouble :: Rnd Random Double
+nextDouble = Rnd nd where 
+  maxW = maxBound :: W.Word64
+  nd (Random w) =
+    (fromIntegral w / fromIntegral maxW, Random $ nextXor w) 
 
-nextDoubleRange :: Double -> Double -> Random -> (Double, Random)
-nextDoubleRange lo hi (Random w) = (d, Random $ nextXor w) where
-   maxW = maxBound :: W.Word64
-   d = lo + (hi - lo) * (fromIntegral w / fromIntegral maxW)
+nextDoubleRange :: Double -> Double -> Rnd Random Double
+nextDoubleRange lo hi = do
+  d <- nextDouble
+  return $ lo + (hi - lo) * d
 
-randomVec :: Random -> (Vec3, Random)
-randomVec seed = 
-  let (vx, seed') = nextDouble seed
-      (vy, seed'') = nextDouble seed'
-      (vz, seed''') = nextDouble seed''
-  in (Vec3 vx vy vz, seed''')
+randomVec :: Rnd Random Vec3
+randomVec = do
+  vx <- nextDouble
+  vy <- nextDouble
+  vz <- nextDouble
+  return $ Vec3 vx vy vz
 
-randomVecRange :: Double -> Double -> Random -> (Vec3, Random)
-randomVecRange lo hi seed = 
-  let (vx, seed') = nextDoubleRange lo hi seed
-      (vy, seed'') = nextDoubleRange lo hi seed'
-      (vz, seed''') = nextDoubleRange lo hi seed''
-  in (Vec3 vx vy vz, seed''')
+randomVecRange :: Double -> Double -> Rnd Random Vec3
+randomVecRange lo hi = do
+  vx <- nextDoubleRange lo hi
+  vy <- nextDoubleRange lo hi
+  vz <- nextDoubleRange lo hi
+  return $ Vec3 vx vy vz
 
-randomVecInSphere :: Random -> (Vec3, Random)
-randomVecInSphere seed = head $ dropWhile (\(v, _) -> lenSqrd v < 1) $ iterate itFn start where
-  unitRnd s = randomVecRange (-1) 1 s
-  start = unitRnd seed
-  itFn (_, s) = unitRnd s
+randomVecInSphere :: Rnd Random Vec3
+randomVecInSphere = do
+  v <- randomVecRange (-1) 1
+  if lenSqrd v >= 1 then randomVecInSphere
+  else return v
 
-randomVecInHemisphere :: Random -> Vec3 -> (Vec3, Random)
-randomVecInHemisphere seed n = 
+randomVecInHemisphere :: Vec3 -> Rnd Random Vec3
+randomVecInHemisphere n = do
+  inUnitS <- randomVecInSphere
   if inUnitS `dot` n > 0 then
-    (inUnitS, s)
+    return inUnitS
   else
-    (neg inUnitS, s)
-  where (inUnitS, s) = randomVecInSphere seed 
+    return $ neg inUnitS

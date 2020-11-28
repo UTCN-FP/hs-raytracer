@@ -30,19 +30,18 @@ hitList r objs tMin tMax =
           (Just hitRec, hitT hitRec)
     start = (Nothing, tMax)
 
-scatter :: Material -> Ray -> HitRecord -> Random -> Maybe (Color, Ray, Random)
-scatter (Diffuse mat) ray hitRec seed =
-  let (v, seed') = randomVec seed
-      p = hitPoint hitRec
+scatter :: Material -> Ray -> HitRecord -> Rnd Random (Maybe (Color, Ray))
+scatter (Diffuse mat) _ hitRec = do 
+  v <- randomVec
+  let p = hitPoint hitRec
       n = hitNormal hitRec
       scatterDir = n `add` v
       d = if nearZero scatterDir then n else scatterDir
-  in Just (lambertianAlbedo mat, Ray p d, seed')
-scatter (Metal mat) ray hitRec seed =
+  return $ Just (lambertianAlbedo mat, Ray p d)
+scatter (Metal mat) ray hitRec = do
   let refl = reflect (unit (rayDirection ray)) (hitNormal hitRec)
       scattered = Ray (hitPoint hitRec) refl
-
-  in if ((rayDirection scattered) `dot` (hitNormal hitRec)) > 0 then 
-    Just (metallicAlbedo mat, scattered, seed)
-    else 
-      Nothing
+  if ((rayDirection scattered) `dot` (hitNormal hitRec)) > 0 then 
+    return $ Just (metallicAlbedo mat, scattered)
+  else 
+    return Nothing

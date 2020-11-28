@@ -12,7 +12,7 @@ import Util.Util
 import Util.Random
 import Material
 
-import Data.List
+import Debug.Trace
 
 degToRad :: Double -> Double
 degToRad d = d * pi / 180
@@ -48,21 +48,23 @@ cameraRay camera  u v =
       camV = cameraVertical camera
   in Ray (cameraOrigin camera) (llc `add` (camH `timesConst` u) `add` (camV `timesConst` v) `sub` o)
 
-rayColor :: Ray -> [Object] -> Int -> Random -> (Vec3, Random)
-rayColor _ _ 0 seed = (vec 0 0 0, seed)
-rayColor r world depth seed =
+rayColor :: Ray -> [Object] -> Int -> Rnd Random Vec3
+rayColor _ _ 0 = do return $ vec 0 0 0
+rayColor r world depth = do
   case hitList r world 0.001 inf of
-    Just hitRec ->
+    Just hitRec -> do
       let mat = hitMaterial hitRec
-      in case scatter mat r hitRec seed of 
-        Nothing -> (vec 0 0 0, seed)
-        Just (att, sc, seed') -> 
-          (colorToVec att `times` rc, seed'') where (rc, seed'') = rayColor sc world (depth - 1) seed'
-    Nothing ->
+      sc <- scatter mat r hitRec
+      case sc of
+        Nothing -> return $ vec 0 0 0
+        Just (att, sc) -> do
+          rc <- rayColor sc world (depth - 1)
+          return $ colorToVec att `times` rc
+    Nothing -> do
       let d = unit (rayDirection r)
           t = 0.5 * (y d + 1.0)
           interP = timesConst (vec 1 1 1) (1-t) `add` timesConst (vec 0.5 0.7 1.0) t
-       in (interP, seed)
+      return interP
        
 
 setupCamera :: Image -> Point -> Double -> Camera
@@ -92,8 +94,8 @@ setupImage w h nrSamples maxDepth =
     imageMaxDepth = maxDepth
   }
 
-renderScene :: Int -> Int -> Random -> Int -> BmpImg
-renderScene w h seed nrSamples = 
+renderScene :: Int -> Int -> Int -> Random -> BmpImg
+renderScene w h nrSamples seed =
   let image = setupImage w h nrSamples 50
       camera = setupCamera image (point 0 0 0.5) 2.0
       world = [sphere (point 0 0 (-1)) 0.5 (diffuse $ color 1 0 0 nrSamples), 
@@ -102,21 +104,25 @@ renderScene w h seed nrSamples =
                sphere (point 0 (-100.5) (-1)) 100 (diffuse $ color 1 1 1 nrSamples)
               ]
 
-      genPixel :: Int -> Int -> Random -> Pixel
-      genPixel x y seed =         
-        colorToPixel . (`vecToColor` nrSamples) $ foldl add (vec 0 0 0) $ unfoldr fn (seed, nrSamples) where
+      genPixel ::  Int -> Int -> Rnd Random Pixel
+      genPixel x y = do
+        let 
           xf = fromIntegral x :: Double
           yf = fromIntegral y :: Double
-          fn (_, 0) = Nothing
-          fn (rnd, smp) =
-            let (r1, rnd') = nextDouble rnd
-                (r2, rnd'') = nextDouble rnd'
-                u = (xf + r1) / fromIntegral (imageWidth image - 1)
+
+          aaSample :: Int -> Vec3 -> Rnd Random Vec3
+          aaSample 0 acc = do return acc
+          aaSample smp acc = do
+            r1 <- nextDouble
+            r2 <- nextDouble
+            let u = (xf + r1) / fromIntegral (imageWidth image - 1)
                 v = (yf + r2) / fromIntegral (imageHeight image - 1)
                 r = cameraRay camera u v
-                (c, rnd''') = rayColor r world (imageMaxDepth image) rnd''
-            in Just (c, (rnd''', smp - 1))
+            c <- rayColor r world (imageMaxDepth image)
+            aaSample (smp - 1) (acc `add` c)
+        smpColor <- aaSample nrSamples (vec 0 0 0)
+        return $ colorToPixel . (`vecToColor` nrSamples) $ smpColor
       
       gen :: Int -> Int -> [[Pixel]]
-      gen w h = [[genPixel x y seed | x <- [0 .. w -1]]| y <- [0 .. h -1]] `using` (parList rdeepseq)
+      gen w h = [[runRandom (varyRandom seed (y + x)) (genPixel x y) | x <- [0 .. w -1]]| y <- [0 .. h -1]] `using` (parList rdeepseq)
   in BmpImg $ map ImgRow (gen w h)

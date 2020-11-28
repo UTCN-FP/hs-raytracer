@@ -1,11 +1,8 @@
 module Main where
 
 import Bmp.Bmp
-import Vec3
 
 import Render
-
-import Control.Parallel.Strategies
 
 import qualified Data.ByteString.Builder as BSB
 import qualified System.Environment as ENV
@@ -26,7 +23,7 @@ procArgs _ = ("render.bmp", 800, 450, 100)
 generateScene :: Handle -> Int -> Int -> Int -> IO ()
 generateScene hFile width height nrSamples =
   BSB.hPutBuilder hFile $ createBitmap img where
-    img = renderScene width height (newRandom 0x90918371983) nrSamples
+    img = renderScene width height nrSamples newSeed
 
 
 main :: IO ()
